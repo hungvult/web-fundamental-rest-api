@@ -3,15 +3,15 @@ import { ServicesService } from './services.service.js';
 
 @Controller('services')
 export class ServicesController {
-    constructor(private readonly servicesService: ServicesService) { }
+  constructor(private readonly servicesService: ServicesService) {}
 
-    @Get()
-    getAllServices() {
-        return this.servicesService.getAllServices();
-    }
+  @Get()
+  getAllServices() {
+    return this.servicesService.getAllServices();
+  }
 
-    @Get(':id')
-    getServiceById(@Param('id') id: string) {
-        return this.servicesService.getServiceById(id);
-    }
+  @Get(':id')
+  getServiceById(@Param('id') id: string) {
+    return this.servicesService.getServiceById(id);
+  }
 }
