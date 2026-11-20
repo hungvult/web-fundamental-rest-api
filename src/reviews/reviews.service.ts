@@ -1,17 +1,15 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type SecuredUser from '../auth/entities/secured-user.entity.js';
 import { ServicesService } from '../services/services.service.js';
 import type { CreateReviewDto } from './dto/create-review.dto.js';
 import type { PatchReviewDto } from './dto/patch-review.dto.js';
 import type { UpdateReviewDto } from './dto/update-review.dto.js';
 import { Review } from './review.entity.js';
-
-function isValidAuthorName(value: unknown): value is string {
-  return typeof value === 'string' && value.trim() !== '';
-}
 
 function isValidRating(value: unknown): value is number {
   return (
@@ -22,32 +20,8 @@ function isValidRating(value: unknown): value is number {
   );
 }
 
-function validateFullReviewBody(
-  body: Partial<UpdateReviewDto>,
-  requireComment: boolean,
-): void {
-  const { authorName, rating, comment } = body;
-
-  if (requireComment) {
-    if (
-      authorName === undefined ||
-      rating === undefined ||
-      comment === undefined
-    ) {
-      throw new BadRequestException(
-        'Missing required fields (authorName, rating, comment)',
-      );
-    }
-  } else if (authorName === undefined || rating === undefined) {
-    throw new BadRequestException(
-      'Missing required fields (authorName, rating)',
-    );
-  }
-
-  if (!isValidAuthorName(authorName)) {
-    throw new BadRequestException('authorName must be a non-empty string');
-  }
-  if (!isValidRating(rating)) {
+function validateOptionalReviewFields(rating: unknown, comment: unknown): void {
+  if (rating !== undefined && !isValidRating(rating)) {
     throw new BadRequestException('Invalid rating (1-5)');
   }
   if (comment !== undefined && typeof comment !== 'string') {
@@ -55,13 +29,32 @@ function validateFullReviewBody(
   }
 }
 
+function validateFullReviewBody(
+  body: Partial<UpdateReviewDto>,
+  requireComment: boolean,
+): void {
+  const { rating, comment } = body;
+
+  if (requireComment) {
+    if (rating === undefined || comment === undefined) {
+      throw new BadRequestException(
+        'Missing required fields (rating, comment)',
+      );
+    }
+  } else if (rating === undefined) {
+    throw new BadRequestException('Missing required fields (rating)');
+  }
+
+  validateOptionalReviewFields(rating, comment);
+}
+
 @Injectable()
 export class ReviewsService {
   private readonly reviews: Review[] = [
     {
       id: 'rv_001',
+      userId: 'user_001',
       serviceId: 'svc_001',
-      authorName: 'Hung',
       rating: 5,
       comment: 'Hay qua',
     },
@@ -69,6 +62,14 @@ export class ReviewsService {
   private nextReviewNumber = this.reviews.length + 1;
 
   constructor(private readonly servicesService: ServicesService) {}
+
+  private findOwnedReview(id: string, user: SecuredUser): Review {
+    const review = this.getReviewById(id);
+    if (user.role !== 'ADMIN' && review.userId !== user.id) {
+      throw new ForbiddenException('You do not have access to this review');
+    }
+    return review;
+  }
 
   getReviewsByServiceId(serviceId: string): Review[] {
     // Check if the service exists
@@ -85,15 +86,19 @@ export class ReviewsService {
     return review;
   }
 
-  createReview(serviceId: string, dto: Partial<CreateReviewDto>): Review {
+  createReview(
+    serviceId: string,
+    dto: Partial<CreateReviewDto>,
+    user: SecuredUser,
+  ): Review {
+    this.servicesService.getServiceById(serviceId);
     const body = dto ?? {};
     validateFullReviewBody(body, false);
-    this.servicesService.getServiceById(serviceId);
 
     const review: Review = {
       id: `rv_${String(this.nextReviewNumber++).padStart(3, '0')}`,
+      userId: user.id,
       serviceId,
-      authorName: (body.authorName as string).trim(),
       rating: body.rating as number,
       comment: body.comment ?? '',
     };
@@ -101,52 +106,40 @@ export class ReviewsService {
     return review;
   }
 
-  updateReview(id: string, dto: Partial<UpdateReviewDto>): Review {
+  updateReview(
+    id: string,
+    dto: Partial<UpdateReviewDto>,
+    user: SecuredUser,
+  ): Review {
+    const review = this.findOwnedReview(id, user);
     const body = dto ?? {};
     validateFullReviewBody(body, true);
 
-    const review = this.getReviewById(id);
-    review.authorName = (body.authorName as string).trim();
     review.rating = body.rating as number;
     review.comment = body.comment as string;
     return review;
   }
 
-  patchReview(id: string, dto: PatchReviewDto): Review {
+  patchReview(id: string, dto: PatchReviewDto, user: SecuredUser): Review {
+    const review = this.findOwnedReview(id, user);
     const body = dto ?? {};
-    const { authorName, rating, comment } = body;
+    const { rating, comment } = body;
 
-    if (
-      authorName === undefined &&
-      rating === undefined &&
-      comment === undefined
-    ) {
+    if (rating === undefined && comment === undefined) {
       throw new BadRequestException(
-        'Missing required fields (authorName or rating or comment)',
+        'Missing required fields (rating or comment)',
       );
     }
-    if (authorName !== undefined && !isValidAuthorName(authorName)) {
-      throw new BadRequestException('authorName must be a non-empty string');
-    }
-    if (rating !== undefined && !isValidRating(rating)) {
-      throw new BadRequestException('Invalid rating (1-5)');
-    }
-    if (comment !== undefined && typeof comment !== 'string') {
-      throw new BadRequestException('comment must be a string');
-    }
+    validateOptionalReviewFields(rating, comment);
 
-    const review = this.getReviewById(id);
-    if (authorName !== undefined) review.authorName = authorName.trim();
     if (rating !== undefined) review.rating = rating;
     if (comment !== undefined) review.comment = comment;
     return review;
   }
 
-  deleteReview(id: string): void {
-    const index = this.reviews.findIndex((item) => item.id === id);
-    if (index === -1) {
-      throw new NotFoundException('Review not found');
-    }
+  deleteReview(id: string, user: SecuredUser): void {
+    const review = this.findOwnedReview(id, user);
+    const index = this.reviews.indexOf(review);
     this.reviews.splice(index, 1);
   }
 }
