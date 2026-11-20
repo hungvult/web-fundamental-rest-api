@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { UsersService } from '../users/users.service.js';
 import { JwtService } from '@nestjs/jwt';
+import { isPasswordMatch } from '../common/password.util.js';
+import { UsersService } from '../users/users.service.js';
 import SecuredUser from './entities/secured-user.entity.js';
-import { User } from '../users/entities/user.entity.js';
 
 @Injectable()
 export class AuthService {
@@ -27,17 +27,15 @@ export class AuthService {
     username: string,
     password: string,
   ): Promise<SecuredUser | null> {
-    // Get user
-    const user: User | undefined = this.usersService
-      .findAll()
-      .find((user) => user.username === username && user.password === password);
-
-    if (user) {
-      const { username, id, role } = user;
-      const securedUser: SecuredUser = { username, id, role };
-
-      return await Promise.resolve(securedUser);
+    const user = this.usersService.findByUsername(username);
+    if (!user || !(await isPasswordMatch(password, user.password))) {
+      return null;
     }
-    return null;
+
+    return {
+      username: user.username,
+      id: user.id,
+      role: user.role,
+    };
   }
 }

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { hashPasswordSync } from '../common/password.util.js';
 import { User } from './entities/user.entity.js';
 
 export type PublicUser = Omit<User, 'password'>;
@@ -19,7 +20,7 @@ export class UsersService {
     {
       id: 'user_001',
       username: 'user1',
-      password: 'password1',
+      password: hashPasswordSync('password1'),
       role: 'USER',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -27,7 +28,7 @@ export class UsersService {
     {
       id: 'user_002',
       username: 'admin1',
-      password: 'password2',
+      password: hashPasswordSync('password2'),
       role: 'ADMIN',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -40,6 +41,10 @@ export class UsersService {
 
   findOne(id: string): User | undefined {
     return this.users.find((user) => user.id === id);
+  }
+
+  findByUsername(username: string): User | undefined {
+    return this.users.find((user) => user.username === username);
   }
 
   findAllPublic(): PublicUser[] {
