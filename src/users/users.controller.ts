@@ -10,13 +10,13 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
-  @Get(':id')
-  getUserById(@Param('id') id: string) {
-    return this.usersService.findOne(id);
-  }
-
   @Get('me')
   getCurrentUser() {
     throw new Error('Not implemented yet');
+  }
+
+  @Get(':id')
+  getUserById(@Param('id') id: string) {
+    return this.usersService.findOne(id);
   }
 }
