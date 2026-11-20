@@ -22,11 +22,11 @@ export class UsersService {
     },
   ];
 
-  findAll() {
+  findAll(): User[] {
     return this.users;
   }
 
-  findOne(id: string) {
+  findOne(id: string): User | undefined {
     return this.users.find((user) => user.id === id);
   }
 }
