@@ -1,5 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { hashPasswordSync } from '../common/password.util.js';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { hashPassword, hashPasswordSync } from '../common/password.util.js';
 import { User } from './entities/user.entity.js';
 
 export type PublicUser = Omit<User, 'password'>;
@@ -34,6 +38,7 @@ export class UsersService {
       updatedAt: new Date(),
     },
   ];
+  private nextUserNumber = this.users.length + 1;
 
   findAll(): User[] {
     return this.users;
@@ -57,5 +62,25 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return toPublicUser(user);
+  }
+
+  async create(username: string, password: string): Promise<PublicUser> {
+    if (this.findByUsername(username)) {
+      throw new ConflictException('Duplicated username');
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const now = new Date();
+    const newUser: User = {
+      id: `user_${String(this.nextUserNumber++).padStart(3, '0')}`,
+      username,
+      password: hashedPassword,
+      role: 'USER',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.users.push(newUser);
+    return toPublicUser(newUser);
   }
 }
