@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type SecuredUser from '../auth/entities/secured-user.entity.js';
 import { ServicesService } from '../services/services.service.js';
 import { Booking } from './booking.entity.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
@@ -20,57 +22,65 @@ export class BookingsService {
 
   constructor(private readonly servicesService: ServicesService) {}
 
-  getAllBookings(): Booking[] {
-    return this.bookings;
-  }
-
-  getBookingById(id: string): Booking {
+  private findOwnedBooking(id: string, user: SecuredUser): Booking {
     const booking = this.bookings.find((item) => item.id === id);
     if (!booking) {
       throw new NotFoundException('Booking not found');
     }
+    if (user.role !== 'ADMIN' && booking.userId !== user.id) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
     return booking;
   }
 
-  createBooking(dto: Partial<CreateBookingDto>): Booking {
+  getAllBookings(user: SecuredUser): Booking[] {
+    if (user.role === 'ADMIN') {
+      return this.bookings;
+    }
+    return this.bookings.filter((item) => item.userId === user.id);
+  }
+
+  getBookingById(id: string, user: SecuredUser): Booking {
+    return this.findOwnedBooking(id, user);
+  }
+
+  createBooking(dto: Partial<CreateBookingDto>, user: SecuredUser): Booking {
     const body = dto ?? {};
     if (
       !isNonEmptyString(body.serviceId) ||
       !isNonEmptyString(body.date) ||
-      !isNonEmptyString(body.timeSlot) ||
-      !isNonEmptyString(body.customerName)
+      !isNonEmptyString(body.timeSlot)
     ) {
-      throw new BadRequestException(
-        'serviceId, date, timeSlot, customerName are required',
-      );
+      throw new BadRequestException('serviceId, date, timeSlot are required');
     }
 
     this.servicesService.getServiceById(body.serviceId);
 
     const booking: Booking = {
       id: `bkg_${String(this.nextBookingNumber++).padStart(3, '0')}`,
+      userId: user.id,
       serviceId: body.serviceId,
       date: body.date,
       timeSlot: body.timeSlot,
-      customerName: body.customerName,
       status: 'PENDING',
     };
     this.bookings.push(booking);
     return booking;
   }
 
-  updateBooking(id: string, dto: Partial<UpdateBookingDto>): Booking {
-    const booking = this.getBookingById(id);
+  updateBooking(
+    id: string,
+    dto: Partial<UpdateBookingDto>,
+    user: SecuredUser,
+  ): Booking {
+    const booking = this.findOwnedBooking(id, user);
     const body = dto ?? {};
     if (
       !isNonEmptyString(body.serviceId) ||
       !isNonEmptyString(body.date) ||
-      !isNonEmptyString(body.timeSlot) ||
-      !isNonEmptyString(body.customerName)
+      !isNonEmptyString(body.timeSlot)
     ) {
-      throw new BadRequestException(
-        'serviceId, date, timeSlot, customerName are required',
-      );
+      throw new BadRequestException('serviceId, date, timeSlot are required');
     }
 
     this.servicesService.getServiceById(body.serviceId);
@@ -78,33 +88,30 @@ export class BookingsService {
     booking.serviceId = body.serviceId;
     booking.date = body.date;
     booking.timeSlot = body.timeSlot;
-    booking.customerName = body.customerName;
     return booking;
   }
 
-  patchBooking(id: string, dto: PatchBookingDto): Booking {
-    const booking = this.getBookingById(id);
+  patchBooking(id: string, dto: PatchBookingDto, user: SecuredUser): Booking {
+    const booking = this.findOwnedBooking(id, user);
     const body = dto ?? {};
 
     if (
       body.serviceId === undefined &&
       body.date === undefined &&
-      body.timeSlot === undefined &&
-      body.customerName === undefined
+      body.timeSlot === undefined
     ) {
       throw new BadRequestException(
-        'At least one of serviceId, date, timeSlot, customerName is required',
+        'At least one of serviceId, date, timeSlot is required',
       );
     }
 
     if (
       (body.serviceId !== undefined && !isNonEmptyString(body.serviceId)) ||
       (body.date !== undefined && !isNonEmptyString(body.date)) ||
-      (body.timeSlot !== undefined && !isNonEmptyString(body.timeSlot)) ||
-      (body.customerName !== undefined && !isNonEmptyString(body.customerName))
+      (body.timeSlot !== undefined && !isNonEmptyString(body.timeSlot))
     ) {
       throw new BadRequestException(
-        'serviceId, date, timeSlot, customerName must be non-empty strings',
+        'serviceId, date, timeSlot must be non-empty strings',
       );
     }
 
@@ -115,16 +122,12 @@ export class BookingsService {
     if (body.serviceId !== undefined) booking.serviceId = body.serviceId;
     if (body.date !== undefined) booking.date = body.date;
     if (body.timeSlot !== undefined) booking.timeSlot = body.timeSlot;
-    if (body.customerName !== undefined)
-      booking.customerName = body.customerName;
     return booking;
   }
 
-  deleteBooking(id: string): void {
-    const index = this.bookings.findIndex((item) => item.id === id);
-    if (index === -1) {
-      throw new NotFoundException('Booking not found');
-    }
+  deleteBooking(id: string, user: SecuredUser): void {
+    const booking = this.findOwnedBooking(id, user);
+    const index = this.bookings.indexOf(booking);
     this.bookings.splice(index, 1);
   }
 }
